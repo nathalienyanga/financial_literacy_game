@@ -74,7 +74,13 @@ class _HomepageState extends ConsumerState<Homepage> with WidgetsBindingObserver
       ref.read(gameDataNotifierProvider.notifier).setLocale(chosenLocale);
 
       /// --------------------------------------------------------
-      /// Step 3: Check if person exists
+      /// Step 3: Flush any offline data from previous sessions
+      /// Fire-and-forget so it doesn't block the UI.
+      /// --------------------------------------------------------
+      OfflineSync.syncAll();
+
+      /// --------------------------------------------------------
+      /// Step 4: Check if person exists
       /// --------------------------------------------------------
       final savedUID = prefs.getString('uid');
       final savedPersonExists = prefs.getBool('personExists') ?? false;
@@ -96,8 +102,8 @@ class _HomepageState extends ConsumerState<Homepage> with WidgetsBindingObserver
       }
 
       /// --------------------------------------------------------
-      /// Step 4: If no user → show Sign-in (UID)
-      /// --------------------------------------------------------
+      /// Step 5: If no user → show Sign-in (UID)
+      /// -------------------------------------------------------
       if (mounted) {
         showDialog(
           barrierDismissible: false,
@@ -156,14 +162,8 @@ class _HomepageState extends ConsumerState<Homepage> with WidgetsBindingObserver
   }
 
   void _triggerSync() {
-    debugPrint("App resumed - triggering sync...");
-    final prefs = SharedPreferences.getInstance();
-    prefs.then((p) {
-      final uid = p.getString('uid');
-      if (uid != null && uid.isNotEmpty) {
-        OfflineSync.sync(uid);
-      }
-    });
+    debugPrint("App resumed - syncing all pending offline data...");
+    OfflineSync.syncAll();
   }
 
   @override

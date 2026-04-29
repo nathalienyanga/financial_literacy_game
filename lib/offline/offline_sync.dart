@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'offline_queue.dart';
 
@@ -267,6 +268,29 @@ class OfflineSync {
       writeData['totalRushingRounds'] = FieldValue.increment(data['_incrementRushing'] as int);
 
     await ref.set(writeData, SetOptions(merge: true));
+  }
+
+  /// Sync every UID that has a pending queue on this device.
+  /// Call this when the tablet comes back online to flush all offline sessions.
+  /// Returns the number of UIDs that had pending data.
+  static Future<int> syncAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    final queueKeys = prefs.getKeys()
+        .where((k) => k.startsWith('offline_queue_'))
+        .toList();
+
+    int count = 0;
+    for (final key in queueKeys) {
+      final uid = key.replaceFirst('offline_queue_', '');
+      if (uid.isEmpty) continue;
+      final pending = prefs.getString(key);
+      if (pending == null || pending == '[]' || pending.isEmpty) continue;
+      debugPrint("syncAll: syncing $uid");
+      await sync(uid);
+      count++;
+    }
+    debugPrint("syncAll: done — $count UID(s) synced");
+    return count;
   }
 
   /// Check if currently syncing

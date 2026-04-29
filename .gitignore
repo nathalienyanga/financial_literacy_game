@@ -1,5 +1,8 @@
 lib/firebase_options.dart
 
+# IDE / tool artifacts
+devtools_options.yaml
+
 # Miscellaneous
 *.class
 *.log

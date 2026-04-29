@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/color_palette.dart';
 import '../../domain/concepts/person.dart';
+import '../../domain/entities/levels.dart';
 import '../../domain/utils/database.dart';
 import 'menu_dialog.dart';
 
@@ -22,11 +23,25 @@ class _WelcomeBackDialogState extends ConsumerState<WelcomeBackDialog> {
   @override
   Widget build(BuildContext context) {
     Person person = ref.read(gameDataNotifierProvider).person;
+
+    // savedLevelId is the 0-indexed next level to play.
+    // By design it coincides with the human-readable number of the last
+    // completed level: completed Level 2 → savedLevelId = 2 → show
+    // "Restart Level 2" and "Start Level 3".
     final int savedLevelId = ref.read(gameDataNotifierProvider).levelId;
+    final bool hasCompletedAtLeastOne = savedLevelId > 0;
+    final bool canPlayNext = savedLevelId < levels.length;
+
     final String displayFirst =
         (person.firstName?.isNotEmpty == true) ? person.firstName! : (person.uid ?? '');
     final String displayLast =
         (person.lastName?.isNotEmpty == true) ? person.lastName! : '';
+
+    final buttonStyle = ElevatedButton.styleFrom(
+      elevation: 5.0,
+      backgroundColor: ColorPalette().buttonBackground,
+      foregroundColor: ColorPalette().lightText,
+    );
 
     return Stack(
       children: [
@@ -37,16 +52,11 @@ class _WelcomeBackDialogState extends ConsumerState<WelcomeBackDialog> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                AppLocalizations.of(context)!.sameUser(displayFirst),
-              ),
+              Text(AppLocalizations.of(context)!.sameUser(displayFirst)),
               const SizedBox(height: 10.0),
-
-              // ── NEXT LEVEL button (only when they have saved progress) ─
-              if (savedLevelId > 0) ...[
+              if (hasCompletedAtLeastOne)
                 Text(
-                  'Your last session ended on Level $savedLevelId.\n'
-                  'Ready to start Level ${savedLevelId + 1}?',
+                  'Your last session was Level $savedLevelId.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
@@ -54,26 +64,23 @@ class _WelcomeBackDialogState extends ConsumerState<WelcomeBackDialog> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 10.0),
+              const SizedBox(height: 10.0),
+
+              // ── START NEXT LEVEL button ───────────────────────────────
+              // Game state is already loaded at savedLevelId (the next level).
+              // Just reconnect and pop — do NOT call moveToNextLevel().
+              if (canPlayNext) ...[
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    elevation: 5.0,
-                    backgroundColor: ColorPalette().buttonBackground,
-                    foregroundColor: ColorPalette().lightText,
-                  ),
+                  style: buttonStyle,
                   onPressed: isClicked
                       ? null
                       : () async {
                           setState(() { isClicked = true; });
                           try {
                             await reconnectToGameSession(person: person)
-                                .timeout(const Duration(seconds: 5));
-                          } catch (_) {
-                            // Offline — proceed anyway; data will sync later.
-                          }
-                          if (context.mounted) {
-                            Navigator.of(context).pop();
-                          }
+                                .timeout(const Duration(seconds: 2));
+                          } catch (_) {}
+                          if (context.mounted) Navigator.of(context).pop();
                         },
                   child: Text(
                     'Start Level ${savedLevelId + 1}',
@@ -83,43 +90,59 @@ class _WelcomeBackDialogState extends ConsumerState<WelcomeBackDialog> {
                 const SizedBox(height: 10.0),
               ],
 
-              // ── RESTART button ────────────────────────────────────────
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  elevation: 5.0,
-                  backgroundColor: ColorPalette().buttonBackground,
-                  foregroundColor: ColorPalette().lightText,
+              // ── RESTART PREVIOUS LEVEL button ─────────────────────────
+              // Only show when they have completed at least one level.
+              if (hasCompletedAtLeastOne) ...[
+                ElevatedButton(
+                  style: buttonStyle,
+                  onPressed: isClicked
+                      ? null
+                      : () async {
+                          setState(() { isClicked = true; });
+                          try {
+                            await reconnectToGameSession(person: person)
+                                .timeout(const Duration(seconds: 2));
+                          } catch (_) {}
+                          // savedLevelId used as the 1-indexed human level to restart;
+                          // levels[savedLevelId - 1] is its 0-indexed Level config.
+                          restartLevelFirebase(
+                            level: savedLevelId,
+                            startingCash: levels[savedLevelId - 1].startingCash,
+                          );
+                          ref
+                              .read(gameDataNotifierProvider.notifier)
+                              .loadLevel(savedLevelId - 1);
+                          if (context.mounted) Navigator.of(context).pop();
+                        },
+                  child: Text(
+                    'Restart Level $savedLevelId',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
+                const SizedBox(height: 10.0),
+              ],
+
+              // ── RESTART FROM LEVEL 1 button ───────────────────────────
+              ElevatedButton(
+                style: buttonStyle,
                 onPressed: isClicked
                     ? null
                     : () async {
                         setState(() { isClicked = true; });
-                        // Fire-and-forget: Firestore may be offline, game resets locally.
                         endCurrentGameSession(status: Status.abandoned, person: person);
                         ref.read(gameDataNotifierProvider.notifier).resetGame();
-                        if (context.mounted) {
-                          Navigator.of(context).pop();
-                        }
+                        if (context.mounted) Navigator.of(context).pop();
                       },
-                child: Text(
-                    AppLocalizations.of(context)!.restartGame.capitalize()),
+                child: Text(AppLocalizations.of(context)!.restartGame.capitalize()),
               ),
 
               const SizedBox(height: 25.0),
-              Text(
-                AppLocalizations.of(context)!
-                    .signInDifferentPerson
-                    .capitalize(),
-              ),
+              Text(AppLocalizations.of(context)!.signInDifferentPerson.capitalize()),
               const SizedBox(height: 10.0),
 
               // ── NOT ME button ─────────────────────────────────────────
               ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  elevation: 5.0,
-                  backgroundColor: ColorPalette().buttonBackground,
-                  foregroundColor: ColorPalette().lightText,
-                ),
+                style: buttonStyle,
                 onPressed: isClicked
                     ? null
                     : () {
@@ -128,9 +151,7 @@ class _WelcomeBackDialogState extends ConsumerState<WelcomeBackDialog> {
                         showDialog(
                           barrierDismissible: false,
                           context: context,
-                          builder: (context) {
-                            return const SignInDialogNew();
-                          },
+                          builder: (context) => const SignInDialogNew(),
                         );
                       },
                 child: Text(AppLocalizations.of(context)!.notMe.capitalize()),
@@ -143,93 +164,3 @@ class _WelcomeBackDialogState extends ConsumerState<WelcomeBackDialog> {
     );
   }
 }
-
-//
-// class WelcomeBackDialog extends ConsumerWidget {
-//   const WelcomeBackDialog({Key? key}) : super(key: key);
-//
-//   @override
-//   Widget build(BuildContext context, WidgetRef ref) {
-//     Person person = ref.read(gameDataNotifierProvider).person;
-//     return MenuDialog(
-//       showCloseButton: false,
-//       title: 'Welcome back, ${person.firstName} ${person.lastName}!',
-//       content: Column(
-//         mainAxisSize: MainAxisSize.min,
-//         children: [
-//           Text(
-//             "If you are ${person.firstName}, simply start the game.",
-//           ),
-//           const SizedBox(height: 10.0),
-//           Row(
-//             mainAxisSize: MainAxisSize.min,
-//             mainAxisAlignment: MainAxisAlignment.center,
-//             children: [
-//               if (ref.read(gameDataNotifierProvider).levelId != 0)
-//                 ElevatedButton(
-//                   style: ElevatedButton.styleFrom(
-//                     elevation: 5.0,
-//                     backgroundColor: ColorPalette().buttonBackground,
-//                     foregroundColor: ColorPalette().lightText,
-//                   ),
-//                   onPressed: () async {
-//                     bool couldReconnect =
-//                         await reconnectToGameSession(person: person);
-//                     if (!couldReconnect) {
-//                       ref.read(gameDataNotifierProvider.notifier).resetGame();
-//                     }
-//                     if (context.mounted) {
-//                       Navigator.of(context).pop();
-//                     }
-//                   },
-//                   child: Text(
-//                       'Start at level ${ref.read(gameDataNotifierProvider).levelId + 1}'),
-//                 ),
-//               if (ref.read(gameDataNotifierProvider).levelId != 0)
-//                 const SizedBox(width: 20),
-//               ElevatedButton(
-//                 style: ElevatedButton.styleFrom(
-//                   elevation: 5.0,
-//                   backgroundColor: ColorPalette().buttonBackground,
-//                   foregroundColor: ColorPalette().lightText,
-//                 ),
-//                 onPressed: () async {
-//                   await endCurrentGameSession(
-//                       status: Status.abandoned, person: person);
-//                   ref.read(gameDataNotifierProvider.notifier).resetGame();
-//                   if (context.mounted) {
-//                     Navigator.of(context).pop();
-//                   }
-//                 },
-//                 child: Text(AppLocalizations.of(context)!.restartGame),
-//               ),
-//             ],
-//           ),
-//           const SizedBox(height: 25.0),
-//           Text(
-//             AppLocalizations.of(context)!.signInDifferentPerson,
-//           ),
-//           const SizedBox(height: 10.0),
-//           ElevatedButton(
-//             style: ElevatedButton.styleFrom(
-//               elevation: 5.0,
-//               backgroundColor: ColorPalette().buttonBackground,
-//               foregroundColor: ColorPalette().lightText,
-//             ),
-//             onPressed: () {
-//               Navigator.of(context).pop();
-//               showDialog(
-//                 barrierDismissible: false,
-//                 context: context,
-//                 builder: (context) {
-//                   return const SignInDialog();
-//                 },
-//               );
-//             },
-//             child: Text(AppLocalizations.of(context)!.notMe),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }

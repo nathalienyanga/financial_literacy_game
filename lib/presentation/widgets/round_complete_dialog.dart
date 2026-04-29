@@ -34,14 +34,14 @@ class RoundCompleteDialog extends StatelessWidget {
     // Reset in memory immediately so the next player sees a clean state.
     ref.read(gameDataNotifierProvider.notifier).resetGameLocalNoSave();
 
-    // Navigate to sign-in right away — sync happens in background.
+    // Show sign-in BEFORE popping so the game board is never exposed between dialogs.
     if (context.mounted) {
-      Navigator.of(context).pop();
       showDialog(
         barrierDismissible: false,
         context: context,
         builder: (_) => const SignInDialogNew(),
       );
+      Navigator.of(context).pop();
     }
 
     // Background sync — does not block navigation.

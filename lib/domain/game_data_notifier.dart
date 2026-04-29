@@ -21,6 +21,7 @@ import 'utils/device_and_personal_data.dart';
 
 import '../../offline/offline_storage.dart';
 import '../../offline/offline_queue.dart';
+import '../../offline/progress_store.dart';
 import 'analytics/session_analytics.dart';
 
 final gameDataNotifierProvider =
@@ -241,6 +242,16 @@ class GameDataNotifier extends StateNotifier<GameData> {
         state = state.copyWith(gameIsFinished: true);
       } else {
         state = state.copyWith(currentLevelSolved: true);
+        // Persist the next level immediately so that logging out before
+        // clicking "Go to Level N" still resumes at the correct level.
+        final nextId = state.levelId + 1;
+        saveLevelIDLocally(nextId);
+        // Also write to Firestore (offline-queued automatically) so any
+        // other tablet the player signs in on picks up the correct level.
+        ProgressStore.recordLevelComplete(
+          uid: state.person.uid ?? '',
+          nextLevelId: nextId,
+        );
       }
     }
 

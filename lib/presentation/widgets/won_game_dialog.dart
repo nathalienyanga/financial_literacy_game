@@ -43,14 +43,14 @@ class _WonGameDialogState extends State<WonGameDialog> {
 
     widget.ref.read(gameDataNotifierProvider.notifier).resetGameLocalNoSave();
 
-    // Navigate immediately — sync and Firestore writes happen in background.
+    // Show sign-in BEFORE popping so the game board is never exposed between dialogs.
     if (context.mounted) {
-      Navigator.of(context).pop();
       showDialog(
         barrierDismissible: false,
         context: context,
         builder: (_) => const SignInDialogNew(),
       );
+      Navigator.of(context).pop();
     }
 
     // Background: sync queue and mark session complete.

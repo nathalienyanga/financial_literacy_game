@@ -6,12 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/color_palette.dart';
 import '../../domain/concepts/person.dart';
-import '../../domain/entities/levels.dart';
 import '../../domain/game_data_notifier.dart';
 import '../../domain/utils/database.dart';
 import '../../domain/utils/device_and_personal_data.dart';
+import '../../offline/progress_store.dart';
 import 'menu_dialog.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class IsThisYouDialog extends ConsumerStatefulWidget {
   final Person person;
@@ -86,61 +85,48 @@ class _IsThisYouDialogState extends ConsumerState<IsThisYouDialog> {
                       ref.read(gameDataNotifierProvider.notifier).setPerson(person);
                       await savePersonLocally(person);
 
-                      // Try to reconnect to an existing Firestore session.
-                      // Wrap with timeout + catch so offline devices don't freeze.
+                      // Reconnect to the most recent Firestore game session so
+                      // subsequent round writes land in the right document.
                       bool reconnected = false;
                       try {
                         reconnected = await reconnectToGameSession(person: person)
-                            .timeout(const Duration(seconds: 5));
-                      } catch (_) {
-                        reconnected = false;
-                      }
+                            .timeout(const Duration(seconds: 3));
+                      } catch (_) {}
+
+                      // Read authoritative next level from ProgressStore.
+                      // Checks Firestore first (server → SDK cache → local prefs)
+                      // and resolves any cross-device conflict with "max level wins".
+                      final progressLevel =
+                          await ProgressStore.getNextLevel(person.uid ?? '');
 
                       bool isReturningUser = false;
 
-                      if (reconnected && currentLevelDataRef != null) {
-                        // Online path — restore level from Firestore.
-                        try {
-                          final levelDoc = await currentLevelDataRef!.get();
-                          final firestoreLevel =
-                              ((levelDoc.data() as Map<String, dynamic>?)?['level'] as int?) ?? 1;
-                          final restoredId = (firestoreLevel - 1).clamp(0, levels.length - 1);
-                          ref.read(gameDataNotifierProvider.notifier).loadLevel(restoredId);
-                          isReturningUser = true;
-                        } catch (_) {
-                          // Can't read level — start fresh.
-                          saveUserInFirestore(person); // fire-and-forget: syncs when online
-                          ref.read(gameDataNotifierProvider.notifier).resetGame();
-                        }
+                      if (progressLevel != null && progressLevel > 0) {
+                        // Returning player with recorded progress.
+                        ref.read(gameDataNotifierProvider.notifier).loadLevel(progressLevel);
+                        isReturningUser = true;
+                      } else if (reconnected) {
+                        // Existing Firestore session but no progress doc yet —
+                        // player is at or below Level 1.  Keep the resetGame()
+                        // state (Level 1) and show the welcome-back screen.
+                        isReturningUser = true;
                       } else {
-                        // Offline or new user — check the per-UID level cache
-                        // written by "Done for the week" on this device.
-                        final prefs = await SharedPreferences.getInstance();
-                        final cachedLevel = prefs.getInt('nextLevel_${person.uid}');
-                        if (cachedLevel != null && cachedLevel > 0) {
-                          // Returning participant who completed a previous week.
-                          ref.read(gameDataNotifierProvider.notifier).loadLevel(cachedLevel);
-                          isReturningUser = true;
-                        } else {
-                          // Genuinely new user — register in Firestore when back online.
-                          saveUserInFirestore(person); // fire-and-forget: syncs when online
-                          ref.read(gameDataNotifierProvider.notifier).resetGame();
-                        }
+                        // Brand-new player — register in Firestore when online.
+                        saveUserInFirestore(person);
+                        ref.read(gameDataNotifierProvider.notifier).resetGame();
                       }
 
-                      setState(() { isProcessing = false; });
-
                       if (context.mounted) {
-                        Navigator.of(context).pop();
+                        // Push WelcomeBackDialog BEFORE popping so the game
+                        // screen is never exposed between the two dialogs.
                         if (isReturningUser) {
-                          // Show "Welcome back" with Next Level + Restart options.
                           showDialog(
                             barrierDismissible: false,
                             context: context,
                             builder: (_) => const WelcomeBackDialog(),
                           );
                         }
-                        // New users: dialog closes and game starts at Level 1.
+                        Navigator.of(context).pop();
                       }
                     },
               child: Text(AppLocalizations.of(context)!.yesButton),

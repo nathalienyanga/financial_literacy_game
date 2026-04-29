@@ -10,6 +10,7 @@ import '../../domain/game_data_notifier.dart';
 import '../../domain/utils/database.dart';
 import '../../offline/offline_storage.dart';
 import '../../offline/offline_sync.dart';
+import '../../offline/progress_store.dart';
 import 'menu_dialog.dart';
 import 'sign_in_dialog_with_code.dart';
 
@@ -52,9 +53,9 @@ class NextLevelDialog extends StatelessWidget {
     final prefs = await SharedPreferences.getInstance();
     final uid = prefs.getString('uid');
 
-    // Save next level and week before clearing prefs.
+    // Persist next level to Firestore (offline-queued) + local prefs.
     if (uid != null && uid.isNotEmpty) {
-      await prefs.setInt('nextLevel_$uid', nextLevelId);
+      await ProgressStore.recordLevelComplete(uid: uid, nextLevelId: nextLevelId);
     }
     await prefs.setInt('lastCompletedWeek', weekNumber);
 
@@ -71,14 +72,14 @@ class NextLevelDialog extends StatelessWidget {
     // Reset in memory immediately so the next player sees a clean state.
     ref.read(gameDataNotifierProvider.notifier).resetGameLocalNoSave();
 
-    // Navigate to sign-in right away — sync and Firestore writes happen in background.
+    // Show sign-in BEFORE popping so the game board is never exposed between dialogs.
     if (context.mounted) {
-      Navigator.of(context).pop();
       showDialog(
         barrierDismissible: false,
         context: context,
         builder: (_) => const SignInDialogNew(),
       );
+      Navigator.of(context).pop();
     }
 
     // Background: sync queue and mark level complete in Firestore.
@@ -129,8 +130,8 @@ class NextLevelDialog extends StatelessWidget {
               foregroundColor: ColorPalette().lightText,
             ),
             onPressed: () {
-              Navigator.pop(context);
               ref.read(gameDataNotifierProvider.notifier).moveToNextLevel();
+              Navigator.pop(context);
             },
             child: Text('Go to Level $nextDisplay'),
           );
