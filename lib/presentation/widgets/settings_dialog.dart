@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/game_data_notifier.dart';
+import '../../domain/utils/database.dart';
 import '../../offline/offline_storage.dart';
 import '../../offline/offline_sync.dart';
 import '../../offline/progress_store.dart';
@@ -90,7 +91,8 @@ class SettingsDialog extends ConsumerWidget {
               await prefs.remove('lastPlayedLevelID');
               await prefs.remove('lastRoundNumber');
               await prefs.remove('lastSessionId');
-              ref.read(gameDataNotifierProvider.notifier).resetGame();
+              clearSessionState();
+              ref.read(gameDataNotifierProvider.notifier).resetGameLocalNoSave();
 
               if (context.mounted) {
                 Navigator.of(context).pop(); // close settings

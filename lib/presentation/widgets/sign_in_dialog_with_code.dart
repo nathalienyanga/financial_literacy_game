@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import '../../domain/game_data_notifier.dart';
 
 import '../../offline/offline_storage.dart';
 import '../../offline/offline_sync.dart';
+import '../../offline/progress_store.dart';
 import '../../offline/uid_cache.dart';
 
 import 'is_this_you_dialog.dart';
@@ -49,14 +51,19 @@ class _SignInDialogNewState extends ConsumerState<SignInDialogNew> {
     }
 
     // Try Firestore first, with a timeout so offline mode falls through quickly
+    bool networkTimedOut = false;
     try {
       final person = await searchUserbyUIDInFirestore(uid)
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 5));
       if (person != null) {
+        // Pre-seed local progress so getNextLevel has a SharedPreferences
+        // fallback even if the network drops before IsThisYouDialog runs.
+        ProgressStore.getNextLevel(uid); // fire-and-forget
         return person;
       }
     } catch (e) {
       debugPrint("Firestore lookup failed or timed out: $e");
+      networkTimedOut = e is TimeoutException;
       // Fall through to offline lookup
     }
 
@@ -70,11 +77,13 @@ class _SignInDialogNewState extends ConsumerState<SignInDialogNew> {
       );
     }
 
-    // UID not found anywhere
+    // UID not found anywhere — distinguish network error from genuinely missing UID
     if (mounted) {
       showErrorSnackBar(
         context: context,
-        errorMessage: "Code not found. Please check and try again.",
+        errorMessage: networkTimedOut
+            ? "Network too slow. Check connection and try again."
+            : "Code not found. Please check and try again.",
       );
     }
     return null;
@@ -108,8 +117,9 @@ class _SignInDialogNewState extends ConsumerState<SignInDialogNew> {
       );
     }
 
-    // 5. sync immediately
-    await OfflineSync.sync(person.uid ?? "NOUID");
+    // 5. Sync in background — do NOT await so the IsThisYouDialog appears
+    //    immediately rather than waiting for Firestore on slow networks.
+    OfflineSync.sync(person.uid ?? "NOUID");
   }
 
   @override

@@ -29,6 +29,9 @@ dependencies:
   
   # Device info
   device_info_plus: ^12.2.0
+
+  # Network connectivity — auto-upload when wifi is restored
+  connectivity_plus: ^6.0.0
   
   # Firebase (latest and compatible with Flutter 3.38)
   firebase_core: ^4.2.1

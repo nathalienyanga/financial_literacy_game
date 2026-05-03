@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:confetti/confetti.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:financial_literacy_game/l10n/app_localizations.dart';
@@ -12,6 +14,7 @@ import '../../domain/utils/device_and_personal_data.dart';
 import '../../l10n/l10n.dart';
 import '../../offline/offline_storage.dart';
 import '../../offline/offline_sync.dart';
+import '../../offline/progress_store.dart';
 import '../../offline/uid_cache.dart';
 
 // UI
@@ -35,6 +38,9 @@ class Homepage extends ConsumerStatefulWidget {
 }
 
 class _HomepageState extends ConsumerState<Homepage> with WidgetsBindingObserver {
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  bool _wasOffline = false;
+
   @override
   void initState() {
     super.initState();
@@ -42,80 +48,136 @@ class _HomepageState extends ConsumerState<Homepage> with WidgetsBindingObserver
     // Add lifecycle observer
     WidgetsBinding.instance.addObserver(this);
 
+    // Watch for connectivity changes and auto-upload the moment wifi returns.
+    _startConnectivityWatcher();
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Initialize offline storage and load UID cache
-      await OfflineStorage.initialize();
-      await UIDCache.loadFromCSV();
-      debugPrint("UID cache loaded: ${UIDCache.cachedCount} UIDs");
+      try {
+        // Initialize offline storage and load UID cache
+        await OfflineStorage.initialize();
+        await UIDCache.loadFromCSV();
+        debugPrint("UID cache loaded: ${UIDCache.cachedCount} UIDs");
 
-      /// --------------------------------------------------------
-      /// 🔥 Step 1: Device info only
-      /// --------------------------------------------------------
-      await getDeviceInfo();
+        /// --------------------------------------------------------
+        /// Step 1: Device info only
+        /// --------------------------------------------------------
+        await getDeviceInfo();
 
-      /// --------------------------------------------------------
-      /// Step 2: Language selection (always required)
-      /// --------------------------------------------------------
-      final prefs = await SharedPreferences.getInstance();
-      final storedLocale = prefs.getString("languageCode");
+        /// --------------------------------------------------------
+        /// Step 2: Language selection (always required)
+        /// --------------------------------------------------------
+        final prefs = await SharedPreferences.getInstance();
+        final storedLocale = prefs.getString("languageCode");
 
-      if (storedLocale == null && mounted) {
-        await showDialog(
-          barrierDismissible: false,
-          context: context,
-          builder: (_) => LanguageSelectionDialog(
-            title: AppLocalizations.of(context)!.languagesTitle,
-          ),
-        );
-      }
+        if (storedLocale == null && mounted) {
+          await showDialog(
+            barrierDismissible: false,
+            context: context,
+            builder: (_) => LanguageSelectionDialog(
+              title: AppLocalizations.of(context)!.languagesTitle,
+            ),
+          );
+        }
 
-      /// Apply selected locale
-      final chosenLocale = await L10n.getSystemLocale();
-      ref.read(gameDataNotifierProvider.notifier).setLocale(chosenLocale);
+        /// Apply selected locale
+        final chosenLocale = await L10n.getSystemLocale();
+        ref.read(gameDataNotifierProvider.notifier).setLocale(chosenLocale);
 
-      /// --------------------------------------------------------
-      /// Step 3: Flush any offline data from previous sessions
-      /// Fire-and-forget so it doesn't block the UI.
-      /// --------------------------------------------------------
-      OfflineSync.syncAll();
+        /// --------------------------------------------------------
+        /// Step 3: Flush any offline data from previous sessions
+        /// Fire-and-forget so it doesn't block the UI.
+        /// --------------------------------------------------------
+        OfflineSync.syncAll();
 
-      /// --------------------------------------------------------
-      /// Step 4: Check if person exists
-      /// --------------------------------------------------------
-      final savedUID = prefs.getString('uid');
-      final savedPersonExists = prefs.getBool('personExists') ?? false;
+        /// --------------------------------------------------------
+        /// Step 4: Check if person exists
+        /// --------------------------------------------------------
+        final savedUID = prefs.getString('uid');
+        final savedPersonExists = prefs.getBool('personExists') ?? false;
 
-      if (savedUID != null && savedPersonExists) {
-        bool personLoaded = await loadPerson(ref: ref);
+        if (savedUID != null && savedPersonExists) {
+          bool personLoaded = await loadPerson(ref: ref);
 
-        if (personLoaded) {
-          bool levelLoaded = await loadLevelIDFromLocal(ref: ref);
-          if (levelLoaded && mounted) {
-            showDialog(
-              barrierDismissible: false,
-              context: context,
-              builder: (_) => const WelcomeBackDialog(),
-            );
-            return;
+          if (personLoaded) {
+            // Try fast local read first.
+            bool levelLoaded = await loadLevelIDFromLocal(ref: ref);
+
+            if (!levelLoaded) {
+              // lastPlayedLevelID was cleared (e.g. previous logout) — fall
+              // back to ProgressStore so we can still show the right level.
+              final progressLevel = await ProgressStore.getNextLevel(savedUID);
+              if (progressLevel != null && progressLevel > 0 && mounted) {
+                ref.read(gameDataNotifierProvider.notifier).loadLevel(progressLevel);
+              }
+              // Even if progressLevel is null, player is logged in → show
+              // WelcomeBackDialog at Level 1 rather than forcing re-entry of UID.
+              levelLoaded = true;
+            }
+
+            if (levelLoaded && mounted) {
+              showDialog(
+                barrierDismissible: false,
+                context: context,
+                builder: (_) => const WelcomeBackDialog(),
+              );
+              return;
+            }
           }
         }
-      }
 
-      /// --------------------------------------------------------
-      /// Step 5: If no user → show Sign-in (UID)
-      /// -------------------------------------------------------
-      if (mounted) {
-        showDialog(
-          barrierDismissible: false,
-          context: context,
-          builder: (_) => const SignInDialogNew(),
-        );
+        /// --------------------------------------------------------
+        /// Step 5: If no user → show Sign-in (UID)
+        /// -------------------------------------------------------
+        if (mounted) {
+          showDialog(
+            barrierDismissible: false,
+            context: context,
+            builder: (_) => const SignInDialogNew(),
+          );
+        }
+      } catch (e, stack) {
+        // If any startup step throws, always show sign-in so the app remains
+        // usable rather than leaving a blank screen.
+        debugPrint('Startup error: $e\n$stack');
+        if (mounted) {
+          showDialog(
+            barrierDismissible: false,
+            context: context,
+            builder: (_) => const SignInDialogNew(),
+          );
+        }
       }
     });
   }
 
+  /// Listens for network connectivity changes. Fires syncAll() automatically
+  /// the moment the device transitions from offline → online so no round data
+  /// is left waiting for a manual upload.
+  void _startConnectivityWatcher() async {
+    // Seed initial offline state so we only trigger on genuine transitions.
+    try {
+      final initial = await Connectivity().checkConnectivity();
+      _wasOffline = _isOffline(initial);
+    } catch (_) {}
+
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      final nowOffline = _isOffline(results);
+      if (!nowOffline && _wasOffline) {
+        debugPrint("Connectivity restored — auto-uploading pending data...");
+        OfflineSync.syncAll();
+      }
+      _wasOffline = nowOffline;
+    });
+  }
+
+  static bool _isOffline(List<ConnectivityResult> results) {
+    return results.isEmpty ||
+        results.every((r) => r == ConnectivityResult.none);
+  }
+
   @override
   void dispose() {
+    _connectivitySub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

@@ -43,6 +43,29 @@ class OfflineStorage {
     final prefs = await _getPrefs();
     await prefs.remove(_queueKey());
   }
+
+  // Key-explicit variants used by OfflineQueue to avoid _activeUID race conditions.
+  static Future<List<Map<String, dynamic>>> loadQueueForKey(String key) async {
+    final prefs = await _getPrefs();
+    final jsonString = prefs.getString(key);
+    if (jsonString == null || jsonString.isEmpty) return [];
+    try {
+      final List<dynamic> decoded = jsonDecode(jsonString);
+      return decoded.cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> saveQueueForKey(String key, List<Map<String, dynamic>> queue) async {
+    final prefs = await _getPrefs();
+    await prefs.setString(key, jsonEncode(queue));
+  }
+
+  static Future<void> clearQueueForKey(String key) async {
+    final prefs = await _getPrefs();
+    await prefs.remove(key);
+  }
   /// ------------------------------------------------------------
   /// SAVE simple key–value game state
   /// ------------------------------------------------------------

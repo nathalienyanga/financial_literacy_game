@@ -27,7 +27,7 @@ class OfflineSync {
   /// Manually trigger sync (used at login or app resume)
   static Future<void> sync(String uid) async {
     final queue = OfflineQueue(uid);
-    final pending = queue.getAll();
+    final pending = await queue.getAll();
 
     if (pending.isEmpty) {
       debugPrint("Sync: No pending items for $uid");
@@ -151,17 +151,19 @@ class OfflineSync {
       // Ensure parent document exists (no-op if already present)
       await parentRef.set({'uid': parentDoc}, SetOptions(merge: true));
 
-      // Use a WriteBatch for the subcollection documents
-      final batch = db.batch();
-      for (final action in actions) {
-        final subdoc  = action["subdoc"] as String;
-        final data    = Map<String, dynamic>.from(action["data"] as Map);
-        data['syncedAt'] = FieldValue.serverTimestamp();
-
-        final subRef = parentRef.collection(subCol).doc(subdoc);
-        batch.set(subRef, data);
+      // Firestore WriteBatch limit is 500 docs; use chunks of 400 to be safe.
+      const chunkSize = 400;
+      for (var i = 0; i < actions.length; i += chunkSize) {
+        final chunk = actions.sublist(i, (i + chunkSize).clamp(0, actions.length));
+        final batch = db.batch();
+        for (final action in chunk) {
+          final subdoc = action["subdoc"] as String;
+          final data   = Map<String, dynamic>.from(action["data"] as Map);
+          data['syncedAt'] = FieldValue.serverTimestamp();
+          batch.set(parentRef.collection(subCol).doc(subdoc), data);
+        }
+        await batch.commit();
       }
-      await batch.commit();
 
       debugPrint(
           "$parentCol/$parentDoc/$subCol: ${actions.length} doc(s) written");

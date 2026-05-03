@@ -20,6 +20,7 @@ import 'asset_carousel.dart';
 import 'cash_alert_dialog.dart';
 import 'lost_game_dialog.dart';
 import 'next_level_dialog.dart';
+import 'round_complete_dialog.dart';
 import 'won_game_dialog.dart';
 
 class InvestmentDialog extends StatefulWidget {
@@ -68,9 +69,18 @@ void checkNextLevelReached(WidgetRef ref, BuildContext context) {
   }
 }
 
-// checkRoundComplete removed — no dialog should appear after every normal round.
-// Dialogs only appear on level complete (checkNextLevelReached),
-// game end (checkGameHasEnded), or bankruptcy (checkBankruptcy).
+// Shown after every normal round so players can end their weekly session
+// at any point, not only when completing a full level.
+void checkRoundComplete(WidgetRef ref, BuildContext context) {
+  final gameData = ref.read(gameDataNotifierProvider);
+  if (!gameData.isBankrupt && !gameData.gameIsFinished && !gameData.currentLevelSolved) {
+    showDialog(
+      barrierDismissible: false,
+      context: context,
+      builder: (context) => RoundCompleteDialog(ref: ref),
+    );
+  }
+}
 
 class _InvestmentDialogState extends State<InvestmentDialog> {
   final AutoSizeGroup textGroup = AutoSizeGroup();
@@ -79,6 +89,7 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
   late Level currentLevel;
 
   int _selectedIndex = 0;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -346,6 +357,7 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
                 checkBankruptcy(widget.ref, context);
                 checkGameHasEnded(widget.ref, context);
                 checkNextLevelReached(widget.ref, context);
+                checkRoundComplete(widget.ref, context);
               },
               child: Text(AppLocalizations.of(context)!.dontBuy),
             ),
@@ -372,6 +384,7 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
                       checkBankruptcy(widget.ref, context);
                       checkGameHasEnded(widget.ref, context);
                       checkNextLevelReached(widget.ref, context);
+                      checkRoundComplete(widget.ref, context);
                     }
                   }
                 },
@@ -395,6 +408,7 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
                     checkBankruptcy(widget.ref, context);
                     checkGameHasEnded(widget.ref, context);
                     checkNextLevelReached(widget.ref, context);
+                    checkRoundComplete(widget.ref, context);
                   }
                 },
                 child: Text(AppLocalizations.of(context)!.borrow),

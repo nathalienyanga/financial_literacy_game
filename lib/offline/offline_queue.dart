@@ -1,31 +1,29 @@
 import 'offline_storage.dart';
 
-/// OfflineQueue handles per-UID action storage
-/// (works together with OfflineStorage + Hive, no JSON required)
+/// OfflineQueue handles per-UID action storage using a UID-specific key.
+/// All operations use the key captured at construction so concurrent syncs
+/// for different UIDs never corrupt each other's queue.
 class OfflineQueue {
   final String uid;
+  final String _key;
 
-
-  OfflineQueue(this.uid) {
-    // Ensure correct Hive queue box is opened for this UID
-    OfflineStorage.setActiveUID(uid);
-  }
+  OfflineQueue(this.uid) : _key = 'offline_queue_$uid';
 
   /// Add a single pending action
   Future<void> add(Map<String, dynamic> action) async {
-    final current = OfflineStorage.loadQueue();
+    final current = await OfflineStorage.loadQueueForKey(_key);
     current.add(action);
-    await OfflineStorage.saveQueue(current);
+    await OfflineStorage.saveQueueForKey(_key, current);
   }
 
   /// Return all queued actions for this UID
-  List<Map<String, dynamic>> getAll() {
-    return OfflineStorage.loadQueue();
+  Future<List<Map<String, dynamic>>> getAll() async {
+    return OfflineStorage.loadQueueForKey(_key);
   }
 
   /// Clear actions after successful sync
   Future<void> clear() async {
-    await OfflineStorage.clearQueue();
+    await OfflineStorage.clearQueueForKey(_key);
   }
 }
 

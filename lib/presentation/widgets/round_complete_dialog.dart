@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../config/color_palette.dart';
 import '../../domain/game_data_notifier.dart';
+import '../../domain/utils/database.dart';
 import '../../offline/offline_storage.dart';
 import '../../offline/offline_sync.dart';
 import 'sign_in_dialog_with_code.dart';
@@ -30,6 +31,10 @@ class RoundCompleteDialog extends StatelessWidget {
     await prefs.remove('lastName');
     await prefs.remove('lastRoundNumber');
     await prefs.remove('lastSessionId');
+
+    // Clear Firestore session pointers so the next player's rounds don't
+    // land in this player's session document.
+    clearSessionState();
 
     // Reset in memory immediately so the next player sees a clean state.
     ref.read(gameDataNotifierProvider.notifier).resetGameLocalNoSave();

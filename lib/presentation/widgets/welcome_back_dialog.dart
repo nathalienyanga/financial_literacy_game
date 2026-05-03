@@ -74,12 +74,11 @@ class _WelcomeBackDialogState extends ConsumerState<WelcomeBackDialog> {
                   style: buttonStyle,
                   onPressed: isClicked
                       ? null
-                      : () async {
+                      : () {
                           setState(() { isClicked = true; });
-                          try {
-                            await reconnectToGameSession(person: person)
-                                .timeout(const Duration(seconds: 2));
-                          } catch (_) {}
+                          // Fire-and-forget — legacy session reconnect should
+                          // not block the player from starting immediately.
+                          reconnectToGameSession(person: person).catchError((_) => false);
                           if (context.mounted) Navigator.of(context).pop();
                         },
                   child: Text(
@@ -99,10 +98,7 @@ class _WelcomeBackDialogState extends ConsumerState<WelcomeBackDialog> {
                       ? null
                       : () async {
                           setState(() { isClicked = true; });
-                          try {
-                            await reconnectToGameSession(person: person)
-                                .timeout(const Duration(seconds: 2));
-                          } catch (_) {}
+                          reconnectToGameSession(person: person).catchError((_) => false);
                           // savedLevelId used as the 1-indexed human level to restart;
                           // levels[savedLevelId - 1] is its 0-indexed Level config.
                           restartLevelFirebase(

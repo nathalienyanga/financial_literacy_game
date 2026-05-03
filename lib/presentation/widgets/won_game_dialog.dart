@@ -41,6 +41,7 @@ class _WonGameDialogState extends State<WonGameDialog> {
     await prefs.remove('lastSessionId');
     await prefs.remove('lastPlayedLevelID');
 
+    clearSessionState();
     widget.ref.read(gameDataNotifierProvider.notifier).resetGameLocalNoSave();
 
     // Show sign-in BEFORE popping so the game board is never exposed between dialogs.

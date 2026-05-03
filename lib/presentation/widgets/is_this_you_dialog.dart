@@ -79,54 +79,53 @@ class _IsThisYouDialogState extends ConsumerState<IsThisYouDialog> {
                   : () async {
                       setState(() { isProcessing = true; });
 
-                      final person = widget.person;
-
-                      // Save person locally and set in state
-                      ref.read(gameDataNotifierProvider.notifier).setPerson(person);
-                      await savePersonLocally(person);
-
-                      // Reconnect to the most recent Firestore game session so
-                      // subsequent round writes land in the right document.
-                      bool reconnected = false;
                       try {
-                        reconnected = await reconnectToGameSession(person: person)
-                            .timeout(const Duration(seconds: 3));
-                      } catch (_) {}
+                        final person = widget.person;
 
-                      // Read authoritative next level from ProgressStore.
-                      // Checks Firestore first (server → SDK cache → local prefs)
-                      // and resolves any cross-device conflict with "max level wins".
-                      final progressLevel =
-                          await ProgressStore.getNextLevel(person.uid ?? '');
+                        // Save person locally and set in state
+                        ref.read(gameDataNotifierProvider.notifier).setPerson(person);
+                        await savePersonLocally(person);
 
-                      bool isReturningUser = false;
+                        // Reconnect to the most recent Firestore game session so
+                        // subsequent round writes land in the right document.
+                        bool reconnected = false;
+                        try {
+                          reconnected = await reconnectToGameSession(person: person)
+                              .timeout(const Duration(seconds: 3));
+                        } catch (_) {}
 
-                      if (progressLevel != null && progressLevel > 0) {
-                        // Returning player with recorded progress.
-                        ref.read(gameDataNotifierProvider.notifier).loadLevel(progressLevel);
-                        isReturningUser = true;
-                      } else if (reconnected) {
-                        // Existing Firestore session but no progress doc yet —
-                        // player is at or below Level 1.  Keep the resetGame()
-                        // state (Level 1) and show the welcome-back screen.
-                        isReturningUser = true;
-                      } else {
-                        // Brand-new player — register in Firestore when online.
-                        saveUserInFirestore(person);
-                        ref.read(gameDataNotifierProvider.notifier).resetGame();
-                      }
+                        // Read authoritative next level from ProgressStore.
+                        // Checks Firestore first (server → SDK cache → local prefs)
+                        // and resolves any cross-device conflict with "max level wins".
+                        final progressLevel =
+                            await ProgressStore.getNextLevel(person.uid ?? '');
 
-                      if (context.mounted) {
-                        // Push WelcomeBackDialog BEFORE popping so the game
-                        // screen is never exposed between the two dialogs.
-                        if (isReturningUser) {
+                        if (progressLevel != null && progressLevel > 0) {
+                          // Returning player — load their verified next level.
+                          ref.read(gameDataNotifierProvider.notifier).loadLevel(progressLevel);
+                        } else if (!reconnected && progressLevel == null) {
+                          // No session and no saved progress anywhere — first-time player.
+                          // Register in Firestore when online; game is already at Level 1
+                          // from handleLogin's resetGame().
+                          saveUserInFirestore(person);
+                        }
+
+                        // Always show WelcomeBackDialog so the player can choose their
+                        // starting level.  When progress can't be determined (offline /
+                        // new device), this shows "Start Level 1" as a safe fallback
+                        // rather than silently resetting without any dialog.
+                        if (context.mounted) {
                           showDialog(
                             barrierDismissible: false,
                             context: context,
                             builder: (_) => const WelcomeBackDialog(),
                           );
+                          Navigator.of(context).pop();
                         }
-                        Navigator.of(context).pop();
+                      } catch (_) {
+                        // If anything unexpected fails, re-enable the button so the
+                        // player can try again rather than being permanently stuck.
+                        if (mounted) setState(() { isProcessing = false; });
                       }
                     },
               child: Text(AppLocalizations.of(context)!.yesButton),

@@ -69,7 +69,9 @@ class NextLevelDialog extends StatelessWidget {
     await prefs.remove('lastRoundNumber');
     await prefs.remove('lastSessionId');
 
-    // Reset in memory immediately so the next player sees a clean state.
+    // Reset in memory and clear Firestore session pointers so the next
+    // player's round data doesn't land in this player's session.
+    clearSessionState();
     ref.read(gameDataNotifierProvider.notifier).resetGameLocalNoSave();
 
     // Show sign-in BEFORE popping so the game board is never exposed between dialogs.
