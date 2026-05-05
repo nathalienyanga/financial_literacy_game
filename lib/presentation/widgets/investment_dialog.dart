@@ -344,18 +344,23 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
                 backgroundColor: ColorPalette().buttonBackground,
                 textStyle: const TextStyle(fontSize: 13.0),
               ),
-              onPressed: () {
-                widget.ref.read(gameDataNotifierProvider.notifier).advance(
-                  newCashInterest: currentLevel.savingsRate,
-                  buyDecision: BuyDecision.dontBuy,
-                  selectedAsset: selectedAsset,
-                );
-                Navigator.pop(context);
-                checkBankruptcy(widget.ref, context);
-                checkGameHasEnded(widget.ref, context);
-                checkNextLevelReached(widget.ref, context);
-                checkRoundComplete(widget.ref, context);
-              },
+              onPressed: _isProcessing
+                  ? null
+                  : () {
+                      setState(() => _isProcessing = true);
+                      widget.ref
+                          .read(gameDataNotifierProvider.notifier)
+                          .advance(
+                        newCashInterest: currentLevel.savingsRate,
+                        buyDecision: BuyDecision.dontBuy,
+                        selectedAsset: selectedAsset,
+                      );
+                      Navigator.pop(context);
+                      checkBankruptcy(widget.ref, context);
+                      checkGameHasEnded(widget.ref, context);
+                      checkNextLevelReached(widget.ref, context);
+                      checkRoundComplete(widget.ref, context);
+                    },
               child: Text(AppLocalizations.of(context)!.dontBuy),
             ),
             if (currentLevel.showCashBuyOption)
@@ -366,25 +371,35 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
                   backgroundColor: ColorPalette().buttonBackground,
                   textStyle: const TextStyle(fontSize: 13.0),
                 ),
-                onPressed: () async {
-                  if (await widget.ref
-                      .read(gameDataNotifierProvider.notifier)
-                      .buyAsset(
-                    selectedAsset,
-                    _showNotEnoughCash,
-                    _showAnimalDiedWarning,
-                    currentLevel.savingsRate,
-                  ) ==
-                      true) {
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      checkBankruptcy(widget.ref, context);
-                      checkGameHasEnded(widget.ref, context);
-                      checkNextLevelReached(widget.ref, context);
-                      checkRoundComplete(widget.ref, context);
-                    }
-                  }
-                },
+                onPressed: _isProcessing
+                    ? null
+                    : () async {
+                        setState(() => _isProcessing = true);
+                        try {
+                          final bought = await widget.ref
+                              .read(gameDataNotifierProvider.notifier)
+                              .buyAsset(
+                            selectedAsset,
+                            _showNotEnoughCash,
+                            _showAnimalDiedWarning,
+                            currentLevel.savingsRate,
+                          );
+                          if (bought == true) {
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                              checkBankruptcy(widget.ref, context);
+                              checkGameHasEnded(widget.ref, context);
+                              checkNextLevelReached(widget.ref, context);
+                              checkRoundComplete(widget.ref, context);
+                            }
+                          } else {
+                            // Not enough cash — dialog was shown, let player retry
+                            if (mounted) setState(() => _isProcessing = false);
+                          }
+                        } catch (_) {
+                          if (mounted) setState(() => _isProcessing = false);
+                        }
+                      },
                 child: Text(AppLocalizations.of(context)!.payCash),
               ),
             if (currentLevel.showLoanBorrowOption)
@@ -395,19 +410,26 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
                   backgroundColor: ColorPalette().buttonBackground,
                   textStyle: const TextStyle(fontSize: 13.0),
                 ),
-                onPressed: () async {
-                  await widget.ref
-                      .read(gameDataNotifierProvider.notifier)
-                      .loanAsset(levelLoan, selectedAsset, _showAnimalDiedWarning,
-                      currentLevel.savingsRate);
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    checkBankruptcy(widget.ref, context);
-                    checkGameHasEnded(widget.ref, context);
-                    checkNextLevelReached(widget.ref, context);
-                    checkRoundComplete(widget.ref, context);
-                  }
-                },
+                onPressed: _isProcessing
+                    ? null
+                    : () async {
+                        setState(() => _isProcessing = true);
+                        try {
+                          await widget.ref
+                              .read(gameDataNotifierProvider.notifier)
+                              .loanAsset(levelLoan, selectedAsset,
+                                  _showAnimalDiedWarning, currentLevel.savingsRate);
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            checkBankruptcy(widget.ref, context);
+                            checkGameHasEnded(widget.ref, context);
+                            checkNextLevelReached(widget.ref, context);
+                            checkRoundComplete(widget.ref, context);
+                          }
+                        } catch (_) {
+                          if (mounted) setState(() => _isProcessing = false);
+                        }
+                      },
                 child: Text(AppLocalizations.of(context)!.borrow),
               ),
           ],
