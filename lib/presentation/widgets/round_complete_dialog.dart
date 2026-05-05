@@ -60,15 +60,15 @@ class RoundCompleteDialog extends StatelessWidget {
     return AlertDialog(
       backgroundColor: ColorPalette().backgroundContentCard,
       title: Text(
-        'Congratulations!',
+        'Round Complete',
         style: TextStyle(
-          color: ColorPalette().gameWinText,
+          color: ColorPalette().darkText,
           fontWeight: FontWeight.bold,
           fontSize: 22,
         ),
       ),
       content: Text(
-        'Great job completing this round! Continue playing or end this session for the next player.',
+        'Keep going or pass the tablet to the next player.',
         style: TextStyle(color: ColorPalette().darkText, fontSize: 16),
       ),
       actions: [
@@ -78,11 +78,6 @@ class RoundCompleteDialog extends StatelessWidget {
             foregroundColor: ColorPalette().lightText,
           ),
           onPressed: () {
-            // Mark the level-complete as acknowledged so the dialog does not
-            // repeat on every subsequent round while the player continues.
-            ref
-                .read(gameDataNotifierProvider.notifier)
-                .acknowledgeCurrentLevelSolved();
             Navigator.of(context).pop();
           },
           child: const Text('Continue'),

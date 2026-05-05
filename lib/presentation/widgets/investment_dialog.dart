@@ -91,6 +91,35 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
   int _selectedIndex = 0;
   bool _isProcessing = false;
 
+  Future<bool> _showNotEnoughCash() async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const CashAlertDialog()) ??
+        false;
+  }
+
+  Future<bool> _showAnimalDiedWarning(Asset asset) async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+              title: Text(AppLocalizations.of(ctx)!.warning),
+              content: asset.numberOfAnimals > 1
+                  ? Text(AppLocalizations.of(ctx)!.assetsDied.capitalize())
+                  : Text(AppLocalizations.of(ctx)!.assetDied(asset.type.name)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(AppLocalizations.of(ctx)!.confirm),
+                )
+              ],
+            )) ??
+        false;
+  }
+
   @override
   void initState() {
     Level defaultLevel =
@@ -177,38 +206,6 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
   Widget build(BuildContext context) {
     final localeCode = Localizations.localeOf(context).toString();
     Asset selectedAsset = levelAssets[_selectedIndex];
-
-    Future<bool> showNotEnoughCash() async {
-      if (!context.mounted) return false;
-      return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) {
-            return const CashAlertDialog();
-          }) ?? false;
-    }
-
-    Future<bool> showAnimalDiedWarning(Asset asset) async {
-      if (!context.mounted) return false;
-      return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) {
-            return AlertDialog(
-              title: Text(AppLocalizations.of(context)!.warning),
-              content: asset.numberOfAnimals > 1
-                  ? Text(AppLocalizations.of(context)!.assetsDied.capitalize())
-                  : Text(
-                  AppLocalizations.of(context)!.assetDied(asset.type.name)),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: Text(AppLocalizations.of(context)!.confirm),
-                )
-              ],
-            );
-          }) ?? false;
-    }
 
     final convertedCurrentCash = widget.ref
         .read(gameDataNotifierProvider.notifier)
@@ -374,8 +371,8 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
                       .read(gameDataNotifierProvider.notifier)
                       .buyAsset(
                     selectedAsset,
-                    showNotEnoughCash,
-                    showAnimalDiedWarning,
+                    _showNotEnoughCash,
+                    _showAnimalDiedWarning,
                     currentLevel.savingsRate,
                   ) ==
                       true) {
@@ -401,7 +398,7 @@ class _InvestmentDialogState extends State<InvestmentDialog> {
                 onPressed: () async {
                   await widget.ref
                       .read(gameDataNotifierProvider.notifier)
-                      .loanAsset(levelLoan, selectedAsset, showAnimalDiedWarning,
+                      .loanAsset(levelLoan, selectedAsset, _showAnimalDiedWarning,
                       currentLevel.savingsRate);
                   if (context.mounted) {
                     Navigator.pop(context);

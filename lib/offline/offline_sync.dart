@@ -272,24 +272,49 @@ class OfflineSync {
     await ref.set(writeData, SetOptions(merge: true));
   }
 
+  static DateTime? _lastSyncAll;
+
   /// Sync every UID that has a pending queue on this device.
-  /// Call this when the tablet comes back online to flush all offline sessions.
-  /// Returns the number of UIDs that had pending data.
+  /// Debounced to at most once every 30 seconds; syncs in parallel batches
+  /// of 5 so 300-player queues don't block the UI thread.
   static Future<int> syncAll() async {
+    final now = DateTime.now();
+    if (_lastSyncAll != null &&
+        now.difference(_lastSyncAll!) < const Duration(seconds: 30)) {
+      return 0;
+    }
+    _lastSyncAll = now;
+
     final prefs = await SharedPreferences.getInstance();
-    final queueKeys = prefs.getKeys()
+
+    // Filter to only keys that actually have data before going async.
+    final activeKeys = prefs
+        .getKeys()
         .where((k) => k.startsWith('offline_queue_'))
+        .where((k) {
+          final v = prefs.getString(k);
+          return v != null && v != '[]' && v.isNotEmpty;
+        })
         .toList();
 
+    if (activeKeys.isEmpty) return 0;
+
+    const batchSize = 5;
     int count = 0;
-    for (final key in queueKeys) {
-      final uid = key.replaceFirst('offline_queue_', '');
-      if (uid.isEmpty) continue;
-      final pending = prefs.getString(key);
-      if (pending == null || pending == '[]' || pending.isEmpty) continue;
-      debugPrint("syncAll: syncing $uid");
-      await sync(uid);
-      count++;
+    for (var i = 0; i < activeKeys.length; i += batchSize) {
+      final batch = activeKeys.sublist(
+          i, (i + batchSize).clamp(0, activeKeys.length));
+      final results = await Future.wait(batch.map((key) async {
+        final uid = key.replaceFirst('offline_queue_', '');
+        if (uid.isEmpty) return false;
+        try {
+          await sync(uid);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }));
+      count += results.where((r) => r).length;
     }
     debugPrint("syncAll: done — $count UID(s) synced");
     return count;
