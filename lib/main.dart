@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -15,6 +16,16 @@ import 'presentation/screens/home_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Prevent unhandled async errors from freezing or blanking the screen in
+  // release mode. Errors are logged; the app keeps running.
+  FlutterError.onError = (details) {
+    debugPrint('Flutter error (caught): ${details.exceptionAsString()}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Unhandled async error (caught): $error');
+    return true; // returning true suppresses the default crash behaviour
+  };
 
   // Both sites are full production builds.
   // FLAVOR=site2  → finlitsim  (second country / site B)

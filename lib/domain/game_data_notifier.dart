@@ -173,9 +173,11 @@ class GameDataNotifier extends StateNotifier<GameData> {
   // CONFETTI
   // ----------------------------------------------------------
   void showConfetti() async {
-    state.confettiController.play();
-    await Future.delayed(const Duration(seconds: showConfettiSeconds));
-    state.confettiController.stop();
+    try {
+      state.confettiController.play();
+      await Future.delayed(const Duration(seconds: showConfettiSeconds));
+      state.confettiController.stop();
+    } catch (_) {}
   }
 
   // ----------------------------------------------------------
@@ -273,12 +275,16 @@ class GameDataNotifier extends StateNotifier<GameData> {
 
     // Increment round number and record analytics (async — after flags set)
     _currentRoundNumber++;
-    await _recordRoundData(
-      buyDecision: buyDecision,
-      selectedAsset: selectedAsset,
-      stateBefore: stateBefore,
-      stateAfter: stateAfter,
-    );
+    try {
+      await _recordRoundData(
+        buyDecision: buyDecision,
+        selectedAsset: selectedAsset,
+        stateBefore: stateBefore,
+        stateAfter: stateAfter,
+      );
+    } catch (e) {
+      debugPrint("Round data recording failed (non-fatal): $e");
+    }
 
     _autosave();
   }
